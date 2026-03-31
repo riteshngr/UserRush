@@ -122,7 +122,7 @@ npm run dev
 Go to:
 
 ```
-src/constants/config.js
+src/constants.jsx
 ```
 
 Update:
@@ -177,15 +177,7 @@ You can:
 
 ---
 
-## 6️⃣ Protected Route (Already Setup)
-
-Users cannot access game without login.
-
-So you don't need to handle auth in your game.
-
----
-
-## 7️⃣ Deployment
+## 6️⃣  Deployment
 
 After building your game:
 
