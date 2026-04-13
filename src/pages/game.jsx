@@ -131,6 +131,8 @@ export default function Game() {
     if (mountRef.current) mountRef.current.innerHTML = "";
     mountRef.current.appendChild(renderer.domElement);
 
+    let isMounted = true;
+
     // Pointer Lock Controls (Minecraft-style lock)
     const controls = new PointerLockControls(camera, renderer.domElement);
     const handleLock = () => {
@@ -154,7 +156,7 @@ export default function Game() {
         const deltaY = touch.pageY - lastTouchY;
         
         yaw.current -= deltaX * sensitivity * 0.8;
-        pitch.current -= deltaY * sensitivity * 0.8;
+        pitch.current += deltaY * sensitivity * 0.8;
         const limit = Math.PI / 3;
         pitch.current = Math.max(-limit, Math.min(limit, pitch.current));
         
@@ -175,7 +177,7 @@ export default function Game() {
     const onMouseMove = (e) => {
       if (controls.isLocked) {
         yaw.current -= e.movementX * sensitivity;
-        pitch.current -= e.movementY * sensitivity;
+        pitch.current += e.movementY * sensitivity;
 
         // Clamp pitch
         const limit = Math.PI / 3;
@@ -426,6 +428,7 @@ export default function Game() {
            }, undefined, (error) => console.error("Error loading normal NPC:", error));
         }
         
+        if (!isMounted) return;
         activeNPCs.current.push({ body: npcBody, mesh: wrapper });
       }
     };
@@ -511,8 +514,8 @@ export default function Game() {
     world.addBody(playerBody);
     playerBodyRef.current = playerBody;
 
-    // Load Character Models (using wrapper pattern to preserve autoScale y-offset)
     loader.load(standUrl, (gltf) => {
+      if (!isMounted) return;
       const wrapper = new THREE.Object3D();
       const model = gltf.scene;
       autoScale(model, 3.5);
@@ -528,6 +531,7 @@ export default function Game() {
     });
 
     loader.load(runUrl, (gltf) => {
+      if (!isMounted) return;
       const wrapper = new THREE.Object3D();
       const model = gltf.scene;
       autoScale(model, 3.5);
@@ -543,6 +547,7 @@ export default function Game() {
     });
 
     loader.load(danceUrl, (gltf) => {
+      if (!isMounted) return;
       const wrapper = new THREE.Object3D();
       const model = gltf.scene;
       autoScale(model, 3.5);
@@ -760,13 +765,16 @@ export default function Game() {
                     
                     scene.add(debModel);
 
-                    // Position Dance model at ruins (player stays where they are)
+                    // Position Dance model at ruins — player does NOT move
                     if (danceModelRef.current) {
                       danceModelRef.current.position.set(0, 0, -145);
                       danceModelRef.current.rotation.y = Math.PI; // Face toward player spawn
                     }
-                    // Switch camera to look at the ruins
-                    cinematicCameraTarget.current = new THREE.Vector3(0, 2, -145);
+                    // Switch ONLY the camera to look at the destroyed building
+                    // debModel is at z=-160, so we target a point in front of it
+                    const debCenter = new THREE.Vector3();
+                    new THREE.Box3().setFromObject(debModel).getCenter(debCenter);
+                    cinematicCameraTarget.current = debCenter.clone();
                     danceActive.current = true;
                     // Show continue button after a short delay
                     setTimeout(() => setShowContinueBtn(true), 4000);
@@ -774,11 +782,11 @@ export default function Game() {
                     // Add solid physics body to the destroyed model
                     const debBox = new THREE.Box3().setFromObject(debModel);
                     const debSize = debBox.getSize(new THREE.Vector3());
-                    const debCenter = debBox.getCenter(new THREE.Vector3());
+                    const debPhysCenter = debBox.getCenter(new THREE.Vector3());
                     const debShape = new CANNON.Box(new CANNON.Vec3(debSize.x / 2, debSize.y / 2, debSize.z / 2));
                     const debBody = new CANNON.Body({ mass: 0 });
                     debBody.addShape(debShape);
-                    debBody.position.copy(debCenter);
+                    debBody.position.copy(debPhysCenter);
                     world.addBody(debBody);
                   }, undefined, (e) => console.error("Deb model load error:", e));
                 }
@@ -1066,37 +1074,47 @@ export default function Game() {
 
         // --- CHARACTER ANIMATION LOGIC ---
         const isDancing = danceActive.current;
+        // Determine which model should be actve
+        const activeModel = (isDancing && danceModelRef.current) ? 'dance' : (moves ? 'run' : 'stand');
         
-        if (standModelRef.current && runModelRef.current && danceModelRef.current) {
-          // Toggle visibility based on state
-          if (isDancing) {
-            standModelRef.current.visible = false;
-            runModelRef.current.visible = false;
-            danceModelRef.current.visible = true;
-          } else {
-            danceModelRef.current.visible = false;
-            standModelRef.current.visible = !moves;
-            runModelRef.current.visible = moves;
-          }
-
-          // Sync positions
-          const pPos = playerBody.position;
+        const pPos = playerBody.position;
+        
+        // Update Stand Model
+        if (standModelRef.current) {
+          standModelRef.current.visible = (activeModel === 'stand');
           standModelRef.current.position.copy(pPos);
-          runModelRef.current.position.copy(pPos);
-          // Dance position is handled in cinematic trigger
-          
-          // Rotation (Face direction of movement)
           if (moves) {
             const rotY = Math.atan2(velocity.x, velocity.z);
-            runModelRef.current.rotation.y = rotY;
             standModelRef.current.rotation.y = rotY;
           }
         }
+        
+        // Update Run Model
+        if (runModelRef.current) {
+          runModelRef.current.visible = (activeModel === 'run');
+          runModelRef.current.position.copy(pPos);
+          if (moves) {
+            const rotY = Math.atan2(velocity.x, velocity.z);
+            runModelRef.current.rotation.y = rotY;
+          }
+        }
+        
+        // Update Dance Model
+        if (danceModelRef.current) {
+          danceModelRef.current.visible = (activeModel === 'dance');
+          // Note: Dance position is normally fixed at ruins, so we don't sync it to pPos here
+        }
 
         // Update Mixers
-        if (standMixerRef.current) standMixerRef.current.update(delta);
-        if (runMixerRef.current) runMixerRef.current.update(delta);
-        if (danceMixerRef.current) danceMixerRef.current.update(delta);
+        if (standMixerRef.current) {
+          standMixerRef.current.update(delta);
+        }
+        if (runMixerRef.current) {
+          runMixerRef.current.update(delta);
+        }
+        if (danceMixerRef.current) {
+          danceMixerRef.current.update(delta);
+        }
 
         // INSTANT FALL DEATH (skip during cinematic / after building destroyed)
         if (playerBody.position.y < -0.5 && buildingHealth.current > 0) {
@@ -1106,12 +1124,15 @@ export default function Game() {
 
         // Camera Update
         if (cinematicCameraTarget.current) {
-          // Cinematic camera: smooth fly toward the dance/ruins target
+          // Cinematic camera: stay behind the player, look toward the destroyed building
+          // Player stays at their current position — only camera moves
           const target = cinematicCameraTarget.current;
-          const camGoal = new THREE.Vector3(target.x + 8, target.y + 5, target.z + 15);
-          camera.position.lerp(camGoal, 0.02);
+          const playerPos = playerBody.position;
+          const camGoal = new THREE.Vector3(playerPos.x, playerPos.y + 5, playerPos.z + 12);
+          camera.position.lerp(camGoal, 0.03);
           camera.lookAt(target);
         } else if (!isTopView.current) {
+          // Normal third-person follow camera
           const distance = cameraDistance.current;
           const h = 2;
           const x = distance * Math.sin(yaw.current) * Math.cos(pitch.current);
@@ -1222,6 +1243,7 @@ export default function Game() {
     window.addEventListener("resize", onResize);
 
     return () => {
+      isMounted = false;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("wheel", onWheel);
@@ -1232,6 +1254,9 @@ export default function Game() {
       controls.dispose();
       dracoLoader.dispose();
       renderer.dispose();
+      standModelRef.current = null;
+      runModelRef.current = null;
+      danceModelRef.current = null;
       if (mountRef.current) mountRef.current.innerHTML = "";
       if (bgm.isPlaying) bgm.stop();
       if (generatorSound.isPlaying) generatorSound.stop();
@@ -1245,9 +1270,9 @@ export default function Game() {
       {/* GAMEPLAY UI - Only visible when playing */}
       {uiGameState === 'playing' && (
         <>
-          <div id="inventory-ui" style={{
+        <div id="inventory-ui" style={{
         position: "absolute",
-        bottom: "2rem",
+        bottom: "6rem",
         left: "50%",
         transform: "translateX(-50%)",
         background: "rgba(0,0,0,0.75)",
@@ -1374,6 +1399,27 @@ export default function Game() {
         boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)"
       }}>
         Press E
+      </div>
+
+      {/* ESC MOUSE HINT */}
+      <div style={{
+        position: 'absolute',
+        bottom: '1.2rem',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        color: 'rgba(255, 255, 255, 0.45)',
+        fontSize: '0.85rem',
+        fontWeight: '500',
+        fontFamily: "'Outfit', 'Inter', sans-serif",
+        letterSpacing: '0.15rem',
+        textTransform: 'uppercase',
+        pointerEvents: 'none',
+        zIndex: 1000,
+        textShadow: '0 0 10px rgba(255, 255, 255, 0.3), 0 2px 4px rgba(0, 0, 0, 0.5)',
+        userSelect: 'none',
+        opacity: 0.8
+      }}>
+        use esc to use mouse
       </div>
 
       {!cinematicPhase && <BaddieSealBar health={uiHealth} />}
