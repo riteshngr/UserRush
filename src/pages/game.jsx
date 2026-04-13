@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
 import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls";
 import * as CANNON from "cannon-es";
 import BaddieSealBar from "../components/BaddieSealBar";
@@ -23,6 +24,9 @@ import finalBgmUrl from "../models/music/bgm.ogg";
 import debUrl from "../models/deb.glb";
 import prashantUrl from "../models/prashant.glb";
 import hsUrl from "../models/hs.jpeg";
+import standUrl from "../models/stand.glb";
+import runUrl from "../models/run.glb";
+import danceUrl from "../models/dance.glb";
 
 export default function Game() {
   const [uiHealth, setUiHealth] = useState(100);
@@ -34,11 +38,21 @@ export default function Game() {
   const [cinematicMessage, setCinematicMessage] = useState(""); 
   const [showControls, setShowControls] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0); // 0: Pick up, 1: Mount, 2: Launch, 3: Completed
   const mountRef = useRef(null);
   const playerRef = useRef(null);
   const collegeModelRef = useRef(null);
   const shakeIntensity = useRef(0);
   const rewardMixer = useRef(null);
+  const standModelRef = useRef(null);
+  const runModelRef = useRef(null);
+  const danceModelRef = useRef(null);
+  const standMixerRef = useRef(null);
+  const runMixerRef = useRef(null);
+  const danceMixerRef = useRef(null);
+  const cinematicCameraTarget = useRef(null); // Camera override target during cinematic
+  const danceActive = useRef(false); // Whether the victory dance is playing
+  const [showContinueBtn, setShowContinueBtn] = useState(false);
   const hasSpawnedReward = useRef(false);
   const axleRef = useRef(null); // Ref for the generator axle animation
   const generatorRef = useRef(null); // Ref for the generator model
@@ -178,7 +192,10 @@ export default function Game() {
 
     // 2. Physics World Initialisation (Requirement 1 & 2)
     const groundSize = 500; // Define early to avoid ReferenceError
-    const loader = new GLTFLoader(); // Define early to avoid ReferenceError
+    const loader = new GLTFLoader();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+    loader.setDRACOLoader(dracoLoader);
     
     const autoScale = (model, targetSize = 4) => {
       const box = new THREE.Box3().setFromObject(model);
@@ -390,7 +407,7 @@ export default function Game() {
              
              ladderMesh.position.y = -2; // center it against the collision box vertical bounds
              wrapper.add(ladderMesh);
-           });
+           }, undefined, (error) => console.error("Error loading ladder NPC:", error));
         } else {
            loader.load(normalNpcUrl, (gltf) => {
              const npcMesh = gltf.scene;
@@ -406,7 +423,7 @@ export default function Game() {
              
              npcMesh.position.y = -1; // Align to collider vertical center
              wrapper.add(npcMesh);
-           });
+           }, undefined, (error) => console.error("Error loading normal NPC:", error));
         }
         
         activeNPCs.current.push({ body: npcBody, mesh: wrapper });
@@ -471,7 +488,7 @@ export default function Game() {
         }
       });
       scene.add(model);
-    });
+    }, undefined, (e) => console.error("Ground load error:", e));
 
     // Grid removed as per request
 
@@ -481,6 +498,7 @@ export default function Game() {
     const player = new THREE.Mesh(playerGeo, playerMat);
     player.position.y = 0.5;
     player.castShadow = true;
+    player.visible = false; // Hide the primitive cube
     scene.add(player);
     playerRef.current = player;
 
@@ -492,6 +510,52 @@ export default function Game() {
     playerBody.position.set(0, 0.5, 0);
     world.addBody(playerBody);
     playerBodyRef.current = playerBody;
+
+    // Load Character Models (using wrapper pattern to preserve autoScale y-offset)
+    loader.load(standUrl, (gltf) => {
+      const wrapper = new THREE.Object3D();
+      const model = gltf.scene;
+      autoScale(model, 3.5);
+      wrapper.add(model);
+      wrapper.visible = true; // Start in idle
+      scene.add(wrapper);
+      standModelRef.current = wrapper;
+      if (gltf.animations.length > 0) {
+        const mixer = new THREE.AnimationMixer(model);
+        mixer.clipAction(gltf.animations[0]).play();
+        standMixerRef.current = mixer;
+      }
+    });
+
+    loader.load(runUrl, (gltf) => {
+      const wrapper = new THREE.Object3D();
+      const model = gltf.scene;
+      autoScale(model, 3.5);
+      wrapper.add(model);
+      wrapper.visible = false;
+      scene.add(wrapper);
+      runModelRef.current = wrapper;
+      if (gltf.animations.length > 0) {
+        const mixer = new THREE.AnimationMixer(model);
+        mixer.clipAction(gltf.animations[0]).play();
+        runMixerRef.current = mixer;
+      }
+    });
+
+    loader.load(danceUrl, (gltf) => {
+      const wrapper = new THREE.Object3D();
+      const model = gltf.scene;
+      autoScale(model, 3.5);
+      wrapper.add(model);
+      wrapper.visible = false;
+      scene.add(wrapper);
+      danceModelRef.current = wrapper;
+      if (gltf.animations.length > 0) {
+        const mixer = new THREE.AnimationMixer(model);
+        mixer.clipAction(gltf.animations[0]).play();
+        danceMixerRef.current = mixer;
+      }
+    });
 
     // 6. Load 3D Models
 
@@ -547,7 +611,7 @@ export default function Game() {
         }
       });
       scene.add(model);
-    });
+    }, undefined, (e) => console.error("Generator load error:", e));
 
 
 
@@ -585,7 +649,7 @@ export default function Game() {
             collisionSound.play();
           }
 
-          const damage = THREE.MathUtils.randInt(3, 7);
+          const damage = THREE.MathUtils.randInt(7, 13);
           buildingHealth.current = Math.max(0, buildingHealth.current - damage);
           setUiHealth(buildingHealth.current);
           
@@ -598,6 +662,7 @@ export default function Game() {
           
           if (buildingHealth.current === 0) {
             // CINEMATIC SEQUENCE START
+            despawnAllNPCs();
             setCinematicPhase('shaking');
             shakeIntensity.current = 3.0; // Explosion impact shake
             
@@ -694,7 +759,28 @@ export default function Game() {
                     });
                     
                     scene.add(debModel);
-                  });
+
+                    // Position Dance model at ruins (player stays where they are)
+                    if (danceModelRef.current) {
+                      danceModelRef.current.position.set(0, 0, -145);
+                      danceModelRef.current.rotation.y = Math.PI; // Face toward player spawn
+                    }
+                    // Switch camera to look at the ruins
+                    cinematicCameraTarget.current = new THREE.Vector3(0, 2, -145);
+                    danceActive.current = true;
+                    // Show continue button after a short delay
+                    setTimeout(() => setShowContinueBtn(true), 4000);
+
+                    // Add solid physics body to the destroyed model
+                    const debBox = new THREE.Box3().setFromObject(debModel);
+                    const debSize = debBox.getSize(new THREE.Vector3());
+                    const debCenter = debBox.getCenter(new THREE.Vector3());
+                    const debShape = new CANNON.Box(new CANNON.Vec3(debSize.x / 2, debSize.y / 2, debSize.z / 2));
+                    const debBody = new CANNON.Body({ mass: 0 });
+                    debBody.addShape(debShape);
+                    debBody.position.copy(debCenter);
+                    world.addBody(debBody);
+                  }, undefined, (e) => console.error("Deb model load error:", e));
                 }
                 
                 // 3. Stay in darkness for 3 seconds then fade back in
@@ -739,7 +825,7 @@ export default function Game() {
                         });
                         
                         scene.add(prashant);
-                      });
+                      }, undefined, (e) => console.error("Prashant model load error:", e));
                     }
                     
                     setTimeout(() => setCinematicMessage(""), 6000);
@@ -786,7 +872,7 @@ export default function Game() {
 
       model.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
       scene.add(model);
-    });
+    }, undefined, (e) => console.error("College load error:", e));
 
     loader.load(shopUrl, (gltf) => {
       const model = gltf.scene;
@@ -817,7 +903,7 @@ export default function Game() {
       
       model.traverse((child) => { if (child.isMesh) { child.castShadow = true; child.receiveShadow = true; } });
       scene.add(model);
-    });
+    }, undefined, (e) => console.error("Shop load error:", e));
 
     // 7. Input Management
     const activeKeys = new Set();
@@ -840,6 +926,7 @@ export default function Game() {
         if (distToShop < 8 && !hasTyre.current) {
           hasTyre.current = true;
           setHasTyreUI(true);
+          setTutorialStep(prev => prev === 0 ? 1 : prev);
           console.log("Tyre picked up!");
         } else if (distToGen < 8 && hasTyre.current) {
           if (tyreRef.current && axleRef.current) {
@@ -849,11 +936,13 @@ export default function Game() {
           }
           hasTyre.current = false;
           setHasTyreUI(false);
+          setTutorialStep(prev => prev === 1 ? 2 : prev);
           console.log("Tyre mounted!");
         }
       }
 
       if (e.key === " " && tyreRef.current && tyreRef.current.visible) {
+        setTutorialStep(prev => prev === 2 ? 3 : prev);
         const tyre = tyreRef.current;
         const worldPos = new THREE.Vector3();
         const worldQuat = new THREE.Quaternion();
@@ -961,6 +1050,7 @@ export default function Game() {
         const moveX = (activeKeys.has("d") || activeKeys.has("arrowright") ? 1 : 0) - (activeKeys.has("a") || activeKeys.has("arrowleft") ? 1 : 0);
         const moveZ = (activeKeys.has("s") || activeKeys.has("arrowdown") ? 1 : 0) - (activeKeys.has("w") || activeKeys.has("arrowup") ? 1 : 0);
 
+        const moves = moveZ !== 0 || moveX !== 0;
         const velocity = new THREE.Vector3(0, 0, 0);
         if (moveZ !== 0) velocity.addScaledVector(forward, -moveZ);
         if (moveX !== 0) velocity.addScaledVector(side, moveX);
@@ -969,22 +1059,59 @@ export default function Game() {
           velocity.normalize().multiplyScalar(moveSpeed);
           playerBody.velocity.x = velocity.x;
           playerBody.velocity.z = velocity.z;
-
-          // Face direction
-          player.rotation.y = Math.atan2(velocity.x, velocity.z);
         } else {
           playerBody.velocity.x = 0;
           playerBody.velocity.z = 0;
         }
 
-        // INSTANT FALL DEATH
-        if (playerBody.position.y < -0.5) {
+        // --- CHARACTER ANIMATION LOGIC ---
+        const isDancing = danceActive.current;
+        
+        if (standModelRef.current && runModelRef.current && danceModelRef.current) {
+          // Toggle visibility based on state
+          if (isDancing) {
+            standModelRef.current.visible = false;
+            runModelRef.current.visible = false;
+            danceModelRef.current.visible = true;
+          } else {
+            danceModelRef.current.visible = false;
+            standModelRef.current.visible = !moves;
+            runModelRef.current.visible = moves;
+          }
+
+          // Sync positions
+          const pPos = playerBody.position;
+          standModelRef.current.position.copy(pPos);
+          runModelRef.current.position.copy(pPos);
+          // Dance position is handled in cinematic trigger
+          
+          // Rotation (Face direction of movement)
+          if (moves) {
+            const rotY = Math.atan2(velocity.x, velocity.z);
+            runModelRef.current.rotation.y = rotY;
+            standModelRef.current.rotation.y = rotY;
+          }
+        }
+
+        // Update Mixers
+        if (standMixerRef.current) standMixerRef.current.update(delta);
+        if (runMixerRef.current) runMixerRef.current.update(delta);
+        if (danceMixerRef.current) danceMixerRef.current.update(delta);
+
+        // INSTANT FALL DEATH (skip during cinematic / after building destroyed)
+        if (playerBody.position.y < -0.5 && buildingHealth.current > 0) {
           window.location.reload();
           return;
         }
 
         // Camera Update
-        if (!isTopView.current) {
+        if (cinematicCameraTarget.current) {
+          // Cinematic camera: smooth fly toward the dance/ruins target
+          const target = cinematicCameraTarget.current;
+          const camGoal = new THREE.Vector3(target.x + 8, target.y + 5, target.z + 15);
+          camera.position.lerp(camGoal, 0.02);
+          camera.lookAt(target);
+        } else if (!isTopView.current) {
           const distance = cameraDistance.current;
           const h = 2;
           const x = distance * Math.sin(yaw.current) * Math.cos(pitch.current);
@@ -994,7 +1121,7 @@ export default function Game() {
           if (camera.position.y < 1) camera.position.y = 1;
           camera.lookAt(player.position.x, player.position.y + 0.5, player.position.z);
         } else {
-          camera.position.set(0, 300, 0); // High position to see 500x500 map
+          camera.position.set(0, 300, 0);
           camera.lookAt(0, 0, 0);
         }
       }
@@ -1103,6 +1230,7 @@ export default function Game() {
       renderer.domElement.removeEventListener("click", handleLock);
       cancelAnimationFrame(animationId);
       controls.dispose();
+      dracoLoader.dispose();
       renderer.dispose();
       if (mountRef.current) mountRef.current.innerHTML = "";
       if (bgm.isPlaying) bgm.stop();
@@ -1138,6 +1266,94 @@ export default function Game() {
       }}>
         {hasTyreUI ? "🛞 TYRE READY" : "NO TYRE"}
       </div>
+
+      {/* TUTORIAL OVERLAY */}
+      {tutorialStep < 3 && !cinematicPhase && (
+        <div style={{
+          position: "absolute",
+          top: "8rem",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(8px)",
+          padding: "1rem 2rem",
+          borderRadius: "1rem",
+          border: "1px solid rgba(255,122,24,0.4)",
+          boxShadow: "0 0 20px rgba(255,122,24,0.15)",
+          color: "white",
+          zIndex: 100,
+          textAlign: "center",
+          fontFamily: "'Outfit', sans-serif",
+          pointerEvents: "none",
+          animation: "tutorial-fade 0.5s ease-out"
+        }}>
+          <div style={{ fontSize: "0.8rem", opacity: 0.6, letterSpacing: "0.1rem", marginBottom: "0.2rem" }}>INSTRUCTION</div>
+          <div style={{ fontSize: "1.4rem", fontWeight: "900", textTransform: "uppercase", letterSpacing: "0.15rem", color: "#ff7a18" }}>
+            {tutorialStep === 0 && "Go near Prashant Tyre and press 'E'"}
+            {tutorialStep === 1 && "Go near Generator Inator and press 'E'"}
+            {tutorialStep === 2 && "Press 'SPACE' to launch!"}
+          </div>
+          <button 
+            onClick={() => setTutorialStep(3)}
+            style={{
+              marginTop: "0.5rem",
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "rgba(255,255,255,0.6)",
+              fontSize: "0.7rem",
+              padding: "0.3rem 1rem",
+              borderRadius: "1rem",
+              cursor: "pointer",
+              pointerEvents: "auto",
+              transition: "all 0.2s"
+            }}
+            onMouseOver={(e) => { e.target.style.color = "#fff"; e.target.style.borderColor = "rgba(255,255,255,0.5)"; }}
+            onMouseOut={(e) => { e.target.style.color = "rgba(255,255,255,0.6)"; e.target.style.borderColor = "rgba(255,255,255,0.2)"; }}
+          >
+            SKIP TUTORIAL
+          </button>
+        </div>
+      )}
+
+      {/* CONTINUE PLAYING BUTTON (after dance cinematic) */}
+      {showContinueBtn && (
+        <div style={{
+          position: "absolute",
+          bottom: "10%",
+          left: "50%",
+          transform: "translateX(-50%)",
+          zIndex: 200,
+          animation: "tutorial-fade 0.5s ease-out"
+        }}>
+          <button
+            onClick={() => {
+              danceActive.current = false;
+              cinematicCameraTarget.current = null;
+              setShowContinueBtn(false);
+            }}
+            style={{
+              background: "linear-gradient(135deg, rgba(57, 255, 20, 0.3) 0%, rgba(20, 45, 20, 0.9) 100%)",
+              backdropFilter: "blur(10px)",
+              border: "2px solid rgba(57, 255, 20, 0.6)",
+              color: "#39FF14",
+              fontSize: "1.2rem",
+              fontWeight: "900",
+              letterSpacing: "0.2rem",
+              padding: "1rem 3rem",
+              borderRadius: "1rem",
+              cursor: "pointer",
+              fontFamily: "'Outfit', sans-serif",
+              textTransform: "uppercase",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.5), inset 0 2px 8px rgba(255,255,255,0.3)",
+              transition: "all 0.3s"
+            }}
+            onMouseOver={(e) => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 10px 40px rgba(57,255,20,0.3), inset 0 2px 8px rgba(255,255,255,0.3)"; }}
+            onMouseOut={(e) => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "0 10px 30px rgba(0,0,0,0.5), inset 0 2px 8px rgba(255,255,255,0.3)"; }}
+          >
+            ▶ CONTINUE PLAYING
+          </button>
+        </div>
+      )}
 
       <div id="prompt-ui" style={{
         position: "absolute",
@@ -1230,26 +1446,40 @@ export default function Game() {
             onClick={() => setUiGameState('intro')}
             style={{
               position: 'absolute',
-              bottom: isMobile ? '12%' : '15%', 
-              right: isMobile ? '8%' : '12%', 
-              width: isMobile ? '90px' : '110px',
-              height: isMobile ? '90px' : '110px',
-              borderRadius: '50%',
-              background: 'rgba(0,0,0,0.5)',
-              backdropFilter: 'blur(4px)',
-              border: '4px solid #39FF14',
+              top: '85%', 
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: isMobile ? '200px' : '280px',
+              height: isMobile ? '60px' : '80px',
+              borderRadius: '1.2rem',
+              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 50%), radial-gradient(circle at 50% 0%, rgba(57, 255, 20, 0.4) 0%, rgba(20, 45, 20, 0.95) 100%)',
+              backdropFilter: 'blur(12px)',
+              border: '2px solid rgba(130, 226, 113, 0.6)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 0 20px rgba(57, 255, 20, 0.5)',
-              animation: 'neon-pulse-glow 2s infinite',
-              transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
+              boxShadow: `
+                0 15px 35px rgba(0, 0, 0, 0.7),
+                0 0 30px rgba(57, 255, 20, 0.15),
+                inset 0 4px 10px rgba(255, 255, 255, 0.4),
+                inset 0 -4px 15px rgba(0, 0, 0, 0.6)
+              `,
+              animation: 'jelly-wobble 4s infinite ease-in-out',
+              transition: 'all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
             }}
           >
-            <svg width="45" height="45" viewBox="0 0 24 24" fill="white" style={{ marginLeft: '6px' }}>
-              <path d="M8 5v14l11-7z"/>
-            </svg>
+            <span style={{
+              color: '#39FF14',
+              fontSize: isMobile ? '1.5rem' : '2rem',
+              fontWeight: '900',
+              letterSpacing: '0.4rem',
+              fontFamily: "'Outfit', sans-serif",
+              textShadow: '0 0 15px rgba(57, 255, 20, 0.5)',
+              paddingLeft: '0.4rem' // center the spacing
+            }}>
+              PLAY GAME
+            </span>
           </div>
 
           <div style={{
@@ -1432,10 +1662,11 @@ export default function Game() {
             0% { opacity: 0; transform: translateY(15px) scale(0.95); filter: blur(10px); }
             100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0px); }
           }
-          @keyframes neon-pulse-glow {
-            0% { box-shadow: 0 0 15px rgba(57, 255, 20, 0.4); transform: scale(1); }
-            50% { box-shadow: 0 0 35px rgba(57, 255, 20, 0.7); transform: scale(1.06); }
-            100% { box-shadow: 0 0 15px rgba(57, 255, 20, 0.4); transform: scale(1); }
+          @keyframes jelly-wobble {
+            0%, 100% { transform: translate(-50%, -50%) scale(1, 1); }
+            30% { transform: translate(-50%, -50%) scale(1.15, 0.85); }
+            50% { transform: translate(-50%, -50%) scale(0.85, 1.15); }
+            70% { transform: translate(-50%, -50%) scale(1.05, 0.95); }
           }
           @keyframes warning-pulse {
             from { opacity: 0.4; scale: 0.95; filter: brightness(1); }
@@ -1451,6 +1682,10 @@ export default function Game() {
             15% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); filter: blur(0px); }
             85% { opacity: 1; transform: translate(-50%, -50%) scale(1.0); filter: blur(0px); }
             100% { opacity: 0; transform: translate(-50%, -50%) scale(1.5); filter: blur(5px); }
+          }
+          @keyframes tutorial-fade {
+            from { opacity: 0; transform: translate(-50%, -10px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
           }
           .chaos-btn:hover {
             transform: scale(1.05);
