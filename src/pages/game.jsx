@@ -33,6 +33,7 @@ export default function Game() {
   const [cinematicPhase, setCinematicPhase] = useState(null); // 'shaking', 'blackout', 'revealed'
   const [cinematicMessage, setCinematicMessage] = useState(""); 
   const [showControls, setShowControls] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const mountRef = useRef(null);
   const playerRef = useRef(null);
   const collegeModelRef = useRef(null);
@@ -60,6 +61,7 @@ export default function Game() {
   const playerBodyRef = useRef(null);
   const generatorBodyRef = useRef(null);
   const groundBodyRef = useRef(null);
+  const buildingBodyRef = useRef(null);
   const introTimerRef = useRef(null);
 
   useEffect(() => {
@@ -81,6 +83,16 @@ export default function Game() {
     };
   }, [uiGameState]);
 
+  useEffect(() => {
+    // Mobile detection
+    const checkMobile = () => {
+      setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // Camera Rotation State
   const yaw = useRef(0);
   const pitch = useRef(0);
@@ -96,6 +108,7 @@ export default function Game() {
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Mobile efficiency
     renderer.shadowMap.enabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace; // Critical for GLTF textures
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -107,14 +120,42 @@ export default function Game() {
     // Pointer Lock Controls (Minecraft-style lock)
     const controls = new PointerLockControls(camera, renderer.domElement);
     const handleLock = () => {
-      if (gameStateRef.current !== 'playing') return; // Use ref to avoid stale closure
-      controls.lock();
-      // Resume audio context if suspended to allow play() calls from loaders to work
+      if (gameStateRef.current !== 'playing') return;
+      if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
+        controls.lock();
+      }
       if (bgmRef.current && bgmRef.current.context.state === 'suspended') {
         bgmRef.current.context.resume();
       }
     };
     renderer.domElement.addEventListener("click", handleLock);
+
+    // Touch Camera Control
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    const onTouchMove = (e) => {
+      if (e.touches.length === 1 && gameStateRef.current === 'playing') {
+        const touch = e.touches[0];
+        const deltaX = touch.pageX - lastTouchX;
+        const deltaY = touch.pageY - lastTouchY;
+        
+        yaw.current -= deltaX * sensitivity * 0.8;
+        pitch.current -= deltaY * sensitivity * 0.8;
+        const limit = Math.PI / 3;
+        pitch.current = Math.max(-limit, Math.min(limit, pitch.current));
+        
+        lastTouchX = touch.pageX;
+        lastTouchY = touch.pageY;
+      }
+    };
+    const onTouchStart = (e) => {
+      if (e.touches.length === 1) {
+        lastTouchX = e.touches[0].pageX;
+        lastTouchY = e.touches[0].pageY;
+      }
+    };
+    document.addEventListener("touchstart", onTouchStart);
+    document.addEventListener("touchmove", onTouchMove);
 
     // Update yaw/pitch based on mouse movement
     const onMouseMove = (e) => {
@@ -511,7 +552,12 @@ export default function Game() {
 
 
     loader.load(collegeUrl, (gltf) => {
+      // 1. Double-Load Prevention
+      const existing = scene.getObjectByName("BUILDING_ROOT");
+      if (existing) scene.remove(existing);
+
       const model = gltf.scene;
+      model.name = "BUILDING_ROOT";
       collegeModelRef.current = model; // Store for cinematic swap
       model.position.set(0, 0, -160); // Shifted closer by 50 units
       autoScale(model, 120); // Massive building
@@ -525,6 +571,8 @@ export default function Game() {
       const buildingBody = new CANNON.Body({ mass: 0 });
       buildingBody.addShape(buildingShape);
       buildingBody.position.copy(center);
+      buildingBodyRef.current = buildingBody;
+      world.addBody(buildingBody);
       
       buildingBody.addEventListener("collide", (e) => {
         if (e.body.isTyre && !e.body.hasDamaged && buildingHealth.current > 0) {
@@ -582,19 +630,48 @@ export default function Game() {
                   const targetPos = oldModel.position.clone();
                   const targetRot = oldModel.rotation.clone();
                   
-                  // 1. Aggressive removal to fix overlap issue
-                  oldModel.visible = false;
-                  scene.remove(oldModel);
+                  // 1. Aggressive NUCLEAR removal to fix overlap issue
+                  // Remove by reference
+                  if (oldModel) {
+                    oldModel.visible = false;
+                    scene.remove(oldModel);
+                  }
                   
-                  // Extra safety: Traverse scene to ensure no other 'college' meshes remain
+                  // Remove by name (catches duplicates if any)
+                  let found;
+                  while((found = scene.getObjectByName("BUILDING_ROOT"))) {
+                    found.visible = false;
+                    scene.remove(found);
+                  }
+
+                  // 1.5 Physics Removal (Crucial for fixing "invisible wall" after destruction)
+                  if (buildingBodyRef.current) {
+                    world.removeBody(buildingBodyRef.current);
+                    buildingBodyRef.current = null;
+                  }
+
+                  // Traverse and kill anything remotely related to the college
+                  const toRemove = [];
                   scene.traverse((obj) => {
-                    if (obj.name.toLowerCase().includes("college") || (obj.isMesh && obj.parent === oldModel)) {
-                      obj.visible = false;
-                      scene.remove(obj);
+                    if (obj.isMesh && (
+                        obj.name.toLowerCase().includes("college") || 
+                        obj.name.toLowerCase().includes("building") ||
+                        obj === oldModel
+                    )) {
+                      toRemove.push(obj);
                     }
                   });
+                  
+                  toRemove.forEach(obj => {
+                    obj.visible = false;
+                    if (obj.geometry) obj.geometry.dispose();
+                    if (obj.material) {
+                        if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+                        else obj.material.dispose();
+                    }
+                    scene.remove(obj);
+                  });
 
-                  // REMOVED aggressive material disposal to prevent texture sharing issues during swap
                   collegeModelRef.current = null;
                   
                   // 2. Load and place new model
@@ -900,6 +977,12 @@ export default function Game() {
           playerBody.velocity.z = 0;
         }
 
+        // INSTANT FALL DEATH
+        if (playerBody.position.y < -0.5) {
+          window.location.reload();
+          return;
+        }
+
         // Camera Update
         if (!isTopView.current) {
           const distance = cameraDistance.current;
@@ -1136,7 +1219,7 @@ export default function Game() {
           height: '100%',
           backgroundImage: `url(${hsUrl})`,
           backgroundSize: 'cover',
-          backgroundPosition: 'top center', // Ensure the title text at the top is visible
+          backgroundPosition: 'top center',
           backgroundRepeat: 'no-repeat',
           display: 'flex',
           zIndex: 4000,
@@ -1144,20 +1227,17 @@ export default function Game() {
         }}>
           {/* Circular Pulse Play Button */}
           <div 
-            onClick={() => {
-              setUiGameState('intro');
-              // Note: Audio and Timing are handled in the useEffect above
-            }}
+            onClick={() => setUiGameState('intro')}
             style={{
               position: 'absolute',
-              bottom: '15%', 
-              right: '12%', // Shifted closer to the ladder character on the right
-              width: '110px',
-              height: '110px',
+              bottom: isMobile ? '12%' : '15%', 
+              right: isMobile ? '8%' : '12%', 
+              width: isMobile ? '90px' : '110px',
+              height: isMobile ? '90px' : '110px',
               borderRadius: '50%',
               background: 'rgba(0,0,0,0.5)',
               backdropFilter: 'blur(4px)',
-              border: '4px solid #39FF14', // Neon Green
+              border: '4px solid #39FF14',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
@@ -1166,28 +1246,19 @@ export default function Game() {
               animation: 'neon-pulse-glow 2s infinite',
               transition: 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'scale(1.18)';
-              e.currentTarget.style.boxShadow = '0 0 45px rgba(57, 255, 20, 0.9)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'scale(1)';
-              e.currentTarget.style.boxShadow = '0 0 20px rgba(57, 255, 20, 0.5)';
-            }}
           >
             <svg width="45" height="45" viewBox="0 0 24 24" fill="white" style={{ marginLeft: '6px' }}>
               <path d="M8 5v14l11-7z"/>
             </svg>
           </div>
 
-          {/* Footer Branding */}
           <div style={{
             position: 'absolute',
-            bottom: '2rem',
-            left: '2rem',
+            bottom: '1rem',
+            left: '1.5rem',
             color: 'white',
             fontFamily: "'Outfit', sans-serif",
-            fontSize: '0.9rem',
+            fontSize: 'max(0.7rem, 1.5vw)',
             opacity: 0.6,
             letterSpacing: '0.1rem'
           }}>
@@ -1241,6 +1312,64 @@ export default function Game() {
                 {text}
               </p>
             ))}
+          </div>
+        </div>
+      )}
+
+      {uiGameState === 'playing' && isMobile && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1000 }}>
+          {/* Virtual Joystick Placeholder Logic - Handled via raw touch for now */}
+          <div style={{ 
+            position: 'absolute', 
+            bottom: '2rem', 
+            left: '2rem', 
+            width: '120px', 
+            height: '120px', 
+            background: 'rgba(255,255,255,0.1)', 
+            borderRadius: '50%', 
+            border: '2px solid rgba(255,255,255,0.2)',
+            pointerEvents: 'auto',
+            touchAction: 'none'
+          }}
+          onTouchStart={(e) => {
+            const touch = e.touches[0];
+            const rect = e.currentTarget.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const move = (t) => {
+              const dx = t.pageX - centerX;
+              const dy = t.pageY - centerY;
+              if (dy < -20) activeKeys.add('w'); else activeKeys.delete('w');
+              if (dy > 20) activeKeys.add('s'); else activeKeys.delete('s');
+              if (dx < -20) activeKeys.add('a'); else activeKeys.delete('a');
+              if (dx > 20) activeKeys.add('d'); else activeKeys.delete('d');
+            };
+            move(touch);
+            const moveHandler = (me) => move(me.touches[0]);
+            const endHandler = () => {
+              activeKeys.delete('w'); activeKeys.delete('a'); activeKeys.delete('s'); activeKeys.delete('d');
+              window.removeEventListener('touchmove', moveHandler);
+              window.removeEventListener('touchend', endHandler);
+            };
+            window.addEventListener('touchmove', moveHandler);
+            window.addEventListener('touchend', endHandler);
+          }}
+          >
+            <div style={{ position: 'absolute', top: '50%', left: '50%', width: '40px', height: '40px', background: 'rgba(255,255,255,0.3)', borderRadius: '50%', transform: 'translate(-50%, -50%)' }} />
+          </div>
+
+          {/* Action Buttons */}
+          <div style={{ position: 'absolute', bottom: '2rem', right: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem', pointerEvents: 'auto' }}>
+            <div 
+              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' })) }}
+              style={{ width: '80px', height: '80px', background: 'rgba(255,122,24,0.3)', border: '2px solid #ff7a18', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+              LAUNCH
+            </div>
+            <div 
+              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e' })) }}
+              style={{ width: '70px', height: '70px', background: 'rgba(57,255,20,0.2)', border: '2px solid #39FF14', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+              E
+            </div>
           </div>
         </div>
       )}
