@@ -183,8 +183,10 @@ export default function Game() {
       const deltaX = cameraTouch.pageX - lastTouchX;
       const deltaY = cameraTouch.pageY - lastTouchY;
       
-      yaw.current -= deltaX * sensitivity * 0.8;
-      pitch.current += deltaY * sensitivity * 0.8;
+      // Mobile sensitivity adjustment (faster than default)
+      const mobileSensMultiplier = 4.0;
+      yaw.current -= deltaX * sensitivity * mobileSensMultiplier;
+      pitch.current += deltaY * sensitivity * mobileSensMultiplier;
       const limit = Math.PI / 3;
       pitch.current = Math.max(-limit, Math.min(limit, pitch.current));
       
@@ -952,6 +954,7 @@ export default function Game() {
 
     // 7. Input Management
     const activeKeys = new Set();
+    window.__activeKeys = activeKeys; // Expose for mobile joystick
     const onKeyDown = (e) => {
       if (gameStateRef.current !== 'playing') return; // Use ref to avoid stale closure
       const key = e.key.toLowerCase();
@@ -1290,6 +1293,7 @@ export default function Game() {
       document.removeEventListener("touchmove", onTouchMove);
       renderer.domElement.removeEventListener("click", handleLock);
       delete window.__joystickTouchIds;
+      delete window.__activeKeys;
       cancelAnimationFrame(animationId);
       controls.dispose();
       dracoLoader.dispose();
@@ -1692,12 +1696,14 @@ export default function Game() {
             }
 
             const move = (touch) => {
+              const ak = window.__activeKeys;
+              if (!ak) return;
               const dx = touch.pageX - centerX;
               const dy = touch.pageY - centerY;
-              if (dy < -15) activeKeys.add('w'); else activeKeys.delete('w');
-              if (dy > 15) activeKeys.add('s'); else activeKeys.delete('s');
-              if (dx < -15) activeKeys.add('a'); else activeKeys.delete('a');
-              if (dx > 15) activeKeys.add('d'); else activeKeys.delete('d');
+              if (dy < -15) ak.add('w'); else ak.delete('w');
+              if (dy > 15) ak.add('s'); else ak.delete('s');
+              if (dx < -15) ak.add('a'); else ak.delete('a');
+              if (dx > 15) ak.add('d'); else ak.delete('d');
             };
 
             // Use the first changed touch as the joystick finger
@@ -1713,7 +1719,7 @@ export default function Game() {
               }
             };
 
-            const endHandler = (me) => {
+              const endHandler = (me) => {
               // Unregister ended joystick touches
               for (let i = 0; i < me.changedTouches.length; i++) {
                 const id = me.changedTouches[i].identifier;
@@ -1721,7 +1727,10 @@ export default function Game() {
                   if (joyIds) joyIds.delete(id);
                 }
               }
-              activeKeys.delete('w'); activeKeys.delete('a'); activeKeys.delete('s'); activeKeys.delete('d');
+              const ak = window.__activeKeys;
+              if (ak) {
+                ak.delete('w'); ak.delete('a'); ak.delete('s'); ak.delete('d');
+              }
               window.removeEventListener('touchmove', moveHandler);
               window.removeEventListener('touchend', endHandler);
             };
