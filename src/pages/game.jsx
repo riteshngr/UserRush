@@ -78,6 +78,21 @@ export default function Game() {
   const buildingBodyRef = useRef(null);
   const introTimerRef = useRef(null);
 
+  const enterFullscreen = () => {
+    try {
+      const docElm = document.documentElement;
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (docElm.requestFullscreen) {
+          docElm.requestFullscreen().catch(err => console.warn("Fullscreen request failed:", err));
+        } else if (docElm.webkitRequestFullscreen) {
+          docElm.webkitRequestFullscreen();
+        }
+      }
+    } catch (e) {
+      console.warn("Fullscreen not supported or failed", e);
+    }
+  };
+
   useEffect(() => {
     if (uiGameState === 'intro') {
       // Start audio immediately for atmosphere
@@ -140,6 +155,7 @@ export default function Game() {
       if (!('ontouchstart' in window || navigator.maxTouchPoints > 0)) {
         controls.lock();
       }
+      enterFullscreen();
       if (bgmRef.current && bgmRef.current.context.state === 'suspended') {
         bgmRef.current.context.resume();
       }
@@ -147,29 +163,50 @@ export default function Game() {
     renderer.domElement.addEventListener("click", handleLock);
 
     // Touch Camera Control
+    // joystickTouchIds: Set of touch identifiers that started on the joystick
+    // These touches must NOT rotate the camera
+    const joystickTouchIds = new Set();
     let lastTouchX = 0;
     let lastTouchY = 0;
     const onTouchMove = (e) => {
-      if (e.touches.length === 1 && gameStateRef.current === 'playing') {
-        const touch = e.touches[0];
-        const deltaX = touch.pageX - lastTouchX;
-        const deltaY = touch.pageY - lastTouchY;
-        
-        yaw.current -= deltaX * sensitivity * 0.8;
-        pitch.current += deltaY * sensitivity * 0.8;
-        const limit = Math.PI / 3;
-        pitch.current = Math.max(-limit, Math.min(limit, pitch.current));
-        
-        lastTouchX = touch.pageX;
-        lastTouchY = touch.pageY;
+      if (gameStateRef.current !== 'playing') return;
+      // Find a touch that is NOT a joystick touch
+      let cameraTouch = null;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (!joystickTouchIds.has(e.touches[i].identifier)) {
+          cameraTouch = e.touches[i];
+          break;
+        }
       }
+      if (!cameraTouch) return;
+
+      const deltaX = cameraTouch.pageX - lastTouchX;
+      const deltaY = cameraTouch.pageY - lastTouchY;
+      
+      yaw.current -= deltaX * sensitivity * 0.8;
+      pitch.current += deltaY * sensitivity * 0.8;
+      const limit = Math.PI / 3;
+      pitch.current = Math.max(-limit, Math.min(limit, pitch.current));
+      
+      lastTouchX = cameraTouch.pageX;
+      lastTouchY = cameraTouch.pageY;
     };
     const onTouchStart = (e) => {
-      if (e.touches.length === 1) {
-        lastTouchX = e.touches[0].pageX;
-        lastTouchY = e.touches[0].pageY;
+      // Only seed camera tracking from touches NOT on the joystick
+      let cameraTouch = null;
+      for (let i = 0; i < e.touches.length; i++) {
+        if (!joystickTouchIds.has(e.touches[i].identifier)) {
+          cameraTouch = e.touches[i];
+          break;
+        }
+      }
+      if (cameraTouch) {
+        lastTouchX = cameraTouch.pageX;
+        lastTouchY = cameraTouch.pageY;
       }
     };
+    // Expose joystickTouchIds so the joystick JSX can register its touches
+    window.__joystickTouchIds = joystickTouchIds;
     document.addEventListener("touchstart", onTouchStart);
     document.addEventListener("touchmove", onTouchMove);
 
@@ -1249,7 +1286,10 @@ export default function Game() {
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
       renderer.domElement.removeEventListener("click", handleLock);
+      delete window.__joystickTouchIds;
       cancelAnimationFrame(animationId);
       controls.dispose();
       dracoLoader.dispose();
@@ -1323,7 +1363,10 @@ export default function Game() {
               {tutorialStep === 2 && (isMobile ? "Tap LAUNCH button!" : "Press 'SPACE' to launch!")}
             </div>
             <button
-              onClick={() => setTutorialStep(3)}
+              onClick={() => {
+                enterFullscreen();
+                setTutorialStep(3);
+              }}
               style={{
                 marginTop: isMobile ? "0.3rem" : "0.5rem",
                 background: "transparent",
@@ -1356,6 +1399,7 @@ export default function Game() {
           }}>
             <button
               onClick={() => {
+                enterFullscreen();
                 danceActive.current = false;
                 cinematicCameraTarget.current = null;
                 setShowContinueBtn(false);
@@ -1503,7 +1547,10 @@ export default function Game() {
         }}>
           {/* Circular Pulse Play Button */}
           <div 
-            onClick={() => setUiGameState('intro')}
+            onClick={() => {
+              enterFullscreen();
+              setUiGameState('intro');
+            }}
             style={{
               position: 'absolute',
               top: '85%', 
@@ -1618,8 +1665,8 @@ export default function Game() {
             position: 'absolute',
             bottom: '1.5rem',
             left: '1.5rem',
-            width: '90px',
-            height: '90px',
+            width: '110px',
+            height: '110px',
             background: 'rgba(255,255,255,0.08)',
             borderRadius: '50%',
             border: '2px solid rgba(255,255,255,0.2)',
@@ -1630,38 +1677,84 @@ export default function Game() {
             justifyContent: 'center'
           }}
           onTouchStart={(e) => {
+            e.stopPropagation();
             const rect = e.currentTarget.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
-            const move = (t) => {
-              const dx = t.pageX - centerX;
-              const dy = t.pageY - centerY;
+
+            // Register all current touches on the joystick so camera ignores them
+            const joyIds = window.__joystickTouchIds;
+            const activeTouchIds = [];
+            for (let i = 0; i < e.changedTouches.length; i++) {
+              const id = e.changedTouches[i].identifier;
+              if (joyIds) joyIds.add(id);
+              activeTouchIds.push(id);
+            }
+
+            const move = (touch) => {
+              const dx = touch.pageX - centerX;
+              const dy = touch.pageY - centerY;
               if (dy < -15) activeKeys.add('w'); else activeKeys.delete('w');
               if (dy > 15) activeKeys.add('s'); else activeKeys.delete('s');
               if (dx < -15) activeKeys.add('a'); else activeKeys.delete('a');
               if (dx > 15) activeKeys.add('d'); else activeKeys.delete('d');
             };
-            move(e.touches[0]);
-            const moveHandler = (me) => move(me.touches[0]);
-            const endHandler = () => {
+
+            // Use the first changed touch as the joystick finger
+            move(e.changedTouches[0]);
+
+            const moveHandler = (me) => {
+              // Find the joystick finger among all touches
+              for (let i = 0; i < me.touches.length; i++) {
+                if (activeTouchIds.includes(me.touches[i].identifier)) {
+                  move(me.touches[i]);
+                  break;
+                }
+              }
+            };
+
+            const endHandler = (me) => {
+              // Unregister ended joystick touches
+              for (let i = 0; i < me.changedTouches.length; i++) {
+                const id = me.changedTouches[i].identifier;
+                if (activeTouchIds.includes(id)) {
+                  if (joyIds) joyIds.delete(id);
+                }
+              }
               activeKeys.delete('w'); activeKeys.delete('a'); activeKeys.delete('s'); activeKeys.delete('d');
               window.removeEventListener('touchmove', moveHandler);
               window.removeEventListener('touchend', endHandler);
             };
-            window.addEventListener('touchmove', moveHandler);
+
+            window.addEventListener('touchmove', moveHandler, { passive: true });
             window.addEventListener('touchend', endHandler);
           }}
           >
-            <div style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.28)', borderRadius: '50%' }} />
+            <div style={{ width: '40px', height: '40px', background: 'rgba(255,255,255,0.28)', borderRadius: '50%' }} />
           </div>
 
           {/* Action Buttons */}
           <div style={{ position: 'absolute', bottom: '1.5rem', right: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.7rem', pointerEvents: 'auto' }}>
             <div
-              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' })); }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                // Register touch so camera ignores it
+                const joyIds = window.__joystickTouchIds;
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                  if (joyIds) joyIds.add(e.changedTouches[i].identifier);
+                }
+                const cleanup = (me) => {
+                  for (let i = 0; i < me.changedTouches.length; i++) {
+                    if (joyIds) joyIds.delete(me.changedTouches[i].identifier);
+                  }
+                  window.removeEventListener('touchend', cleanup);
+                };
+                window.addEventListener('touchend', cleanup);
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+              }}
               style={{
-                width: '64px',
-                height: '64px',
+                width: '70px',
+                height: '70px',
                 background: 'rgba(255,122,24,0.3)',
                 border: '2px solid #ff7a18',
                 borderRadius: '50%',
@@ -1674,15 +1767,30 @@ export default function Game() {
                 letterSpacing: '0.05rem',
                 fontFamily: "'Outfit', sans-serif",
                 textAlign: 'center',
-                userSelect: 'none'
+                userSelect: 'none',
+                touchAction: 'none'
               }}>
               LAUNCH
             </div>
             <div
-              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e' })); }}
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                const joyIds = window.__joystickTouchIds;
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                  if (joyIds) joyIds.add(e.changedTouches[i].identifier);
+                }
+                const cleanup = (me) => {
+                  for (let i = 0; i < me.changedTouches.length; i++) {
+                    if (joyIds) joyIds.delete(me.changedTouches[i].identifier);
+                  }
+                  window.removeEventListener('touchend', cleanup);
+                };
+                window.addEventListener('touchend', cleanup);
+                window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', bubbles: true }));
+              }}
               style={{
-                width: '54px',
-                height: '54px',
+                width: '58px',
+                height: '58px',
                 background: 'rgba(57,255,20,0.2)',
                 border: '2px solid #39FF14',
                 borderRadius: '50%',
@@ -1693,7 +1801,8 @@ export default function Game() {
                 fontWeight: '900',
                 fontSize: '0.75rem',
                 fontFamily: "'Outfit', sans-serif",
-                userSelect: 'none'
+                userSelect: 'none',
+                touchAction: 'none'
               }}>
               E
             </div>
