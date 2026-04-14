@@ -88,6 +88,11 @@ export default function Game() {
           docElm.webkitRequestFullscreen();
         }
       }
+      
+      // Lock screen orientation to landscape (only works on mobile browsers when in fullscreen)
+      if (window.screen && window.screen.orientation && window.screen.orientation.lock) {
+        window.screen.orientation.lock('landscape').catch(err => console.warn("Orientation lock failed:", err));
+      }
     } catch (e) {
       console.warn("Fullscreen not supported or failed", e);
     }
@@ -1912,8 +1917,41 @@ export default function Game() {
           .chaos-btn:active {
             transform: scale(0.95);
           }
+          @media screen and (orientation: portrait) and (max-width: 768px) {
+            #portrait-warning {
+              display: flex !important;
+            }
+          }
         `}
       </style>
+
+      {/* PORTRAIT WARNING OVERLAY */}
+      <div id="portrait-warning" style={{
+        display: "none",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        backgroundColor: "#000",
+        zIndex: 9999,
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "white",
+        fontFamily: "'Outfit', sans-serif",
+        textAlign: "center",
+        padding: "2rem",
+        boxSizing: "border-box"
+      }}>
+        <div style={{ fontSize: "4rem", marginBottom: "1.5rem", animation: "warning-pulse 1s infinite alternate" }}>📱↷</div>
+        <h2 style={{ color: "#ff7a18", textTransform: "uppercase", letterSpacing: "0.1rem", marginBottom: "1rem" }}>
+          Please Rotate Your Device
+        </h2>
+        <p style={{ color: "rgba(255, 255, 255, 0.7)", fontSize: "1rem", lineHeight: "1.5" }}>
+          This game requires landscape orientation.
+        </p>
+      </div>
 
       <div id="wave-ui" style={{
         position: "fixed",
