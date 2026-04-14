@@ -98,9 +98,9 @@ export default function Game() {
   }, [uiGameState]);
 
   useEffect(() => {
-    // Mobile detection
+    // Mobile detection: screen width < 768px is treated as mobile
     const checkMobile = () => {
-      setIsMobile('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      setIsMobile(window.innerWidth < 768);
     };
     checkMobile();
     window.addEventListener('resize', checkMobile);
@@ -1264,210 +1264,224 @@ export default function Game() {
   }, []);
 
   return (
-    <div style={{ position: "relative", width: "100dvw", height: "100dvh", overflow: "hidden", backgroundColor: "#000" }}>
+    <div style={{ position: "relative", width: "100dvw", height: "100dvh", overflow: "hidden", backgroundColor: "#000", maxWidth: "100vw" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%", position: "absolute", top: 0, left: 0 }} />
-      
+
       {/* GAMEPLAY UI - Only visible when playing */}
       {uiGameState === 'playing' && (
         <>
+        {/* INVENTORY UI */}
         <div id="inventory-ui" style={{
-        position: "absolute",
-        bottom: "6rem",
-        left: "50%",
-        transform: "translateX(-50%)",
-        background: "rgba(0,0,0,0.75)",
-        padding: "0.8rem 2rem",
-        borderRadius: "2rem",
-        color: hasTyreUI ? "#4ade80" : "#94a3b8",
-        fontSize: "1.2rem",
-        fontWeight: "900",
-        letterSpacing: "0.1rem",
-        fontFamily: "'Outfit', 'Inter', sans-serif",
-        pointerEvents: "none",
-        border: "1px solid rgba(255,255,255,0.1)",
-        boxShadow: hasTyreUI ? "0 0 15px rgba(74, 222, 128, 0.2)" : "none",
-        zIndex: 100,
-        transition: "all 0.3s ease"
-      }}>
-        {hasTyreUI ? "🛞 TYRE READY" : "NO TYRE"}
-      </div>
-
-      {/* TUTORIAL OVERLAY */}
-      {tutorialStep < 3 && !cinematicPhase && (
-        <div style={{
           position: "absolute",
-          top: "8rem",
+          bottom: isMobile ? "8rem" : "6rem",
           left: "50%",
           transform: "translateX(-50%)",
-          background: "rgba(0,0,0,0.6)",
-          backdropFilter: "blur(8px)",
-          padding: "1rem 2rem",
-          borderRadius: "1rem",
-          border: "1px solid rgba(255,122,24,0.4)",
-          boxShadow: "0 0 20px rgba(255,122,24,0.15)",
-          color: "white",
-          zIndex: 100,
-          textAlign: "center",
-          fontFamily: "'Outfit', sans-serif",
+          background: "rgba(0,0,0,0.75)",
+          padding: isMobile ? "0.5rem 1.2rem" : "0.8rem 2rem",
+          borderRadius: "2rem",
+          color: hasTyreUI ? "#4ade80" : "#94a3b8",
+          fontSize: isMobile ? "0.78rem" : "1.2rem",
+          fontWeight: "900",
+          letterSpacing: "0.1rem",
+          fontFamily: "'Outfit', 'Inter', sans-serif",
           pointerEvents: "none",
-          animation: "tutorial-fade 0.5s ease-out"
+          border: "1px solid rgba(255,255,255,0.1)",
+          boxShadow: hasTyreUI ? "0 0 15px rgba(74, 222, 128, 0.2)" : "none",
+          zIndex: 100,
+          transition: "all 0.3s ease",
+          whiteSpace: "nowrap"
         }}>
-          <div style={{ fontSize: "0.8rem", opacity: 0.6, letterSpacing: "0.1rem", marginBottom: "0.2rem" }}>INSTRUCTION</div>
-          <div style={{ fontSize: "1.4rem", fontWeight: "900", textTransform: "uppercase", letterSpacing: "0.15rem", color: "#ff7a18" }}>
-            {tutorialStep === 0 && "Go near Prashant Tyre and press 'E'"}
-            {tutorialStep === 1 && "Go near Generator Inator and press 'E'"}
-            {tutorialStep === 2 && "Press 'SPACE' to launch!"}
-          </div>
-          <button 
-            onClick={() => setTutorialStep(3)}
-            style={{
-              marginTop: "0.5rem",
-              background: "transparent",
-              border: "1px solid rgba(255,255,255,0.2)",
-              color: "rgba(255,255,255,0.6)",
-              fontSize: "0.7rem",
-              padding: "0.3rem 1rem",
-              borderRadius: "1rem",
-              cursor: "pointer",
-              pointerEvents: "auto",
-              transition: "all 0.2s"
-            }}
-            onMouseOver={(e) => { e.target.style.color = "#fff"; e.target.style.borderColor = "rgba(255,255,255,0.5)"; }}
-            onMouseOut={(e) => { e.target.style.color = "rgba(255,255,255,0.6)"; e.target.style.borderColor = "rgba(255,255,255,0.2)"; }}
-          >
-            SKIP TUTORIAL
-          </button>
+          {hasTyreUI ? "🛞 TYRE READY" : "NO TYRE"}
         </div>
-      )}
 
-      {/* CONTINUE PLAYING BUTTON (after dance cinematic) */}
-      {showContinueBtn && (
-        <div style={{
-          position: "absolute",
-          bottom: "10%",
-          left: "50%",
-          transform: "translateX(-50%)",
-          zIndex: 200,
-          animation: "tutorial-fade 0.5s ease-out"
-        }}>
-          <button
-            onClick={() => {
-              danceActive.current = false;
-              cinematicCameraTarget.current = null;
-              setShowContinueBtn(false);
-            }}
-            style={{
-              background: "linear-gradient(135deg, rgba(57, 255, 20, 0.3) 0%, rgba(20, 45, 20, 0.9) 100%)",
-              backdropFilter: "blur(10px)",
-              border: "2px solid rgba(57, 255, 20, 0.6)",
-              color: "#39FF14",
-              fontSize: "1.2rem",
-              fontWeight: "900",
-              letterSpacing: "0.2rem",
-              padding: "1rem 3rem",
-              borderRadius: "1rem",
-              cursor: "pointer",
-              fontFamily: "'Outfit', sans-serif",
-              textTransform: "uppercase",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.5), inset 0 2px 8px rgba(255,255,255,0.3)",
-              transition: "all 0.3s"
-            }}
-            onMouseOver={(e) => { e.target.style.transform = "scale(1.05)"; e.target.style.boxShadow = "0 10px 40px rgba(57,255,20,0.3), inset 0 2px 8px rgba(255,255,255,0.3)"; }}
-            onMouseOut={(e) => { e.target.style.transform = "scale(1)"; e.target.style.boxShadow = "0 10px 30px rgba(0,0,0,0.5), inset 0 2px 8px rgba(255,255,255,0.3)"; }}
-          >
-            ▶ CONTINUE PLAYING
-          </button>
-        </div>
-      )}
-
-      <div id="prompt-ui" style={{
-        position: "absolute",
-        zIndex: 10,
-        top: "60%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        color: "white",
-        background: "rgba(0,0,0,0.7)",
-        padding: "0.8rem 1.5rem",
-        borderRadius: "0.5rem",
-        pointerEvents: "none",
-        fontFamily: "Inter, sans-serif",
-        fontWeight: "bold",
-        fontSize: "1.5rem",
-        opacity: 0,
-        transition: "opacity 0.2s",
-        boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)"
-      }}>
-        Press E
-      </div>
-
-      {/* ESC MOUSE HINT */}
-      <div style={{
-        position: 'absolute',
-        bottom: '1.2rem',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        color: 'rgba(255, 255, 255, 0.45)',
-        fontSize: '0.85rem',
-        fontWeight: '500',
-        fontFamily: "'Outfit', 'Inter', sans-serif",
-        letterSpacing: '0.15rem',
-        textTransform: 'uppercase',
-        pointerEvents: 'none',
-        zIndex: 1000,
-        textShadow: '0 0 10px rgba(255, 255, 255, 0.3), 0 2px 4px rgba(0, 0, 0, 0.5)',
-        userSelect: 'none',
-        opacity: 0.8
-      }}>
-        use esc to use mouse
-      </div>
-
-      {!cinematicPhase && <BaddieSealBar health={uiHealth} />}
-
-      {/* CINEMATIC OVERLAY SYSTEM */}
-      {(cinematicPhase === 'blackout' || cinematicMessage) && (
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          background: cinematicPhase === 'blackout' ? '#000' : 'transparent',
-          transition: 'background 2s ease-in-out',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 5000, // Top of everything
-          pointerEvents: 'none'
-        }}>
-          {cinematicMessage && (
-            <div style={{
-              color: '#fff',
-              fontSize: '3rem',
-              fontWeight: '900',
-              textTransform: 'uppercase',
-              letterSpacing: '0.4rem',
-              fontFamily: "'Outfit', sans-serif",
-              textAlign: 'center',
-              textShadow: '0 0 20px rgba(255, 255, 255, 0.5)',
-              animation: 'reveal-fade 2s forwards',
-              padding: '2rem'
-            }}>
-              {cinematicMessage}
+        {/* TUTORIAL OVERLAY */}
+        {tutorialStep < 3 && !cinematicPhase && (
+          <div style={{
+            position: "absolute",
+            top: isMobile ? "5rem" : "8rem",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(8px)",
+            padding: isMobile ? "0.5rem 1rem" : "1rem 2rem",
+            borderRadius: "1rem",
+            border: "1px solid rgba(255,122,24,0.4)",
+            boxShadow: "0 0 20px rgba(255,122,24,0.15)",
+            color: "white",
+            zIndex: 100,
+            textAlign: "center",
+            fontFamily: "'Outfit', sans-serif",
+            pointerEvents: "none",
+            animation: "tutorial-fade 0.5s ease-out",
+            maxWidth: isMobile ? "85vw" : "none",
+            boxSizing: "border-box"
+          }}>
+            <div style={{ fontSize: isMobile ? "0.6rem" : "0.8rem", opacity: 0.6, letterSpacing: "0.1rem", marginBottom: "0.2rem" }}>INSTRUCTION</div>
+            <div style={{ fontSize: isMobile ? "0.85rem" : "1.4rem", fontWeight: "900", textTransform: "uppercase", letterSpacing: isMobile ? "0.05rem" : "0.15rem", color: "#ff7a18" }}>
+              {tutorialStep === 0 && (isMobile ? "Near tyre shop → tap E" : "Go near Prashant Tyre and press 'E'")}
+              {tutorialStep === 1 && (isMobile ? "Near generator → tap E" : "Go near Generator Inator and press 'E'")}
+              {tutorialStep === 2 && (isMobile ? "Tap LAUNCH button!" : "Press 'SPACE' to launch!")}
             </div>
-          )}
-        </div>
-      )}
+            <button
+              onClick={() => setTutorialStep(3)}
+              style={{
+                marginTop: isMobile ? "0.3rem" : "0.5rem",
+                background: "transparent",
+                border: "1px solid rgba(255,255,255,0.2)",
+                color: "rgba(255,255,255,0.6)",
+                fontSize: isMobile ? "0.6rem" : "0.7rem",
+                padding: isMobile ? "0.2rem 0.7rem" : "0.3rem 1rem",
+                borderRadius: "1rem",
+                cursor: "pointer",
+                pointerEvents: "auto",
+                transition: "all 0.2s"
+              }}
+              onMouseOver={(e) => { e.target.style.color = "#fff"; e.target.style.borderColor = "rgba(255,255,255,0.5)"; }}
+              onMouseOut={(e) => { e.target.style.color = "rgba(255,255,255,0.6)"; e.target.style.borderColor = "rgba(255,255,255,0.2)"; }}
+            >
+              SKIP TUTORIAL
+            </button>
+          </div>
+        )}
 
-      {/* Shared Cinematic Animations */}
-      <style>
-        {`
-          @keyframes reveal-fade {
-            0% { opacity: 0; transform: translateY(10px) scale(0.95); }
-            100% { opacity: 1; transform: translateY(0) scale(1); }
-          }
-        `}
-      </style>
+        {/* CONTINUE PLAYING BUTTON (after dance cinematic) */}
+        {showContinueBtn && (
+          <div style={{
+            position: "absolute",
+            bottom: isMobile ? "12%" : "10%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 200,
+            animation: "tutorial-fade 0.5s ease-out"
+          }}>
+            <button
+              onClick={() => {
+                danceActive.current = false;
+                cinematicCameraTarget.current = null;
+                setShowContinueBtn(false);
+              }}
+              style={{
+                background: "linear-gradient(135deg, rgba(57, 255, 20, 0.3) 0%, rgba(20, 45, 20, 0.9) 100%)",
+                backdropFilter: "blur(10px)",
+                border: "2px solid rgba(57, 255, 20, 0.6)",
+                color: "#39FF14",
+                fontSize: isMobile ? "0.75rem" : "1.2rem",
+                fontWeight: "900",
+                letterSpacing: isMobile ? "0.1rem" : "0.2rem",
+                padding: isMobile ? "0.6rem 1.5rem" : "1rem 3rem",
+                borderRadius: "1rem",
+                cursor: "pointer",
+                fontFamily: "'Outfit', sans-serif",
+                textTransform: "uppercase",
+                boxShadow: "0 10px 30px rgba(0,0,0,0.5), inset 0 2px 8px rgba(255,255,255,0.3)",
+                transition: "all 0.3s",
+                whiteSpace: "nowrap"
+              }}
+              onMouseOver={(e) => { e.currentTarget.style.transform = "scale(1.05)"; }}
+              onMouseOut={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+            >
+              ▶ CONTINUE PLAYING
+            </button>
+          </div>
+        )}
+
+        {/* PROXIMITY PROMPT */}
+        <div id="prompt-ui" style={{
+          position: "absolute",
+          zIndex: 10,
+          top: isMobile ? "55%" : "60%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          color: "white",
+          background: "rgba(0,0,0,0.7)",
+          padding: isMobile ? "0.5rem 1rem" : "0.8rem 1.5rem",
+          borderRadius: "0.5rem",
+          pointerEvents: "none",
+          fontFamily: "Inter, sans-serif",
+          fontWeight: "bold",
+          fontSize: isMobile ? "0.9rem" : "1.5rem",
+          opacity: 0,
+          transition: "opacity 0.2s",
+          boxShadow: "0 4px 6px rgba(0, 0, 0, 0.3)",
+          whiteSpace: "nowrap",
+          maxWidth: "90vw",
+          textAlign: "center"
+        }}>
+          Press E
+        </div>
+
+        {/* ESC MOUSE HINT — hide on mobile (touch devices don't need ESC hint) */}
+        {!isMobile && (
+          <div style={{
+            position: 'absolute',
+            bottom: '1.2rem',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: 'rgba(255, 255, 255, 0.45)',
+            fontSize: '0.85rem',
+            fontWeight: '500',
+            fontFamily: "'Outfit', 'Inter', sans-serif",
+            letterSpacing: '0.15rem',
+            textTransform: 'uppercase',
+            pointerEvents: 'none',
+            zIndex: 1000,
+            textShadow: '0 0 10px rgba(255, 255, 255, 0.3), 0 2px 4px rgba(0, 0, 0, 0.5)',
+            userSelect: 'none',
+            opacity: 0.8,
+            whiteSpace: 'nowrap'
+          }}>
+            use esc to use mouse
+          </div>
+        )}
+
+        {!cinematicPhase && <BaddieSealBar health={uiHealth} isMobile={isMobile} />}
+
+        {/* CINEMATIC OVERLAY SYSTEM */}
+        {(cinematicPhase === 'blackout' || cinematicMessage) && (
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            background: cinematicPhase === 'blackout' ? '#000' : 'transparent',
+            transition: 'background 2s ease-in-out',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 5000,
+            pointerEvents: 'none'
+          }}>
+            {cinematicMessage && (
+              <div style={{
+                color: '#fff',
+                fontSize: isMobile ? '1.4rem' : '3rem',
+                fontWeight: '900',
+                textTransform: 'uppercase',
+                letterSpacing: isMobile ? '0.15rem' : '0.4rem',
+                fontFamily: "'Outfit', sans-serif",
+                textAlign: 'center',
+                textShadow: '0 0 20px rgba(255, 255, 255, 0.5)',
+                animation: 'reveal-fade 2s forwards',
+                padding: isMobile ? '1rem' : '2rem',
+                maxWidth: '90vw',
+                boxSizing: 'border-box'
+              }}>
+                {cinematicMessage}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Shared Cinematic Animations */}
+        <style>
+          {`
+            @keyframes reveal-fade {
+              0% { opacity: 0; transform: translateY(10px) scale(0.95); }
+              100% { opacity: 1; transform: translateY(0) scale(1); }
+            }
+          `}
+        </style>
         </>
       )}
 
@@ -1560,13 +1574,16 @@ export default function Game() {
           color: 'white',
           fontFamily: "'Outfit', sans-serif",
           textAlign: 'center',
-          padding: '2rem'
+          padding: isMobile ? '1rem' : '2rem',
+          boxSizing: 'border-box',
+          overflow: 'hidden'
         }}>
           <div style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: '1.5rem',
-            animation: 'intro-zoom-out 8s forwards linear'
+            gap: isMobile ? '0.8rem' : '1.5rem',
+            animation: 'intro-zoom-out 8s forwards linear',
+            maxWidth: isMobile ? '90vw' : '100%'
           }}>
             {[
               "A STORY FROM OUR CAMPUS",
@@ -1576,12 +1593,14 @@ export default function Game() {
               "USE MY INATOR."
             ].map((text, i) => (
               <p key={i} style={{
-                fontSize: i === 0 ? '1.2rem' : '1.8rem',
+                fontSize: i === 0
+                  ? (isMobile ? '0.75rem' : '1.2rem')
+                  : (isMobile ? '1.05rem' : '1.8rem'),
                 fontWeight: i === 0 ? '400' : '900',
                 margin: 0,
                 opacity: 0,
                 textTransform: 'uppercase',
-                letterSpacing: '0.3rem',
+                letterSpacing: isMobile ? '0.1rem' : '0.3rem',
                 textShadow: '0 0 15px rgba(255, 255, 255, 0.4)',
                 animation: `story-reveal-line 1.5s forwards ${i * 1.2 + 0.5}s cubic-bezier(0.4, 0, 0.2, 1)`
               }}>
@@ -1594,33 +1613,35 @@ export default function Game() {
 
       {uiGameState === 'playing' && isMobile && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1000 }}>
-          {/* Virtual Joystick Placeholder Logic - Handled via raw touch for now */}
-          <div style={{ 
-            position: 'absolute', 
-            bottom: '2rem', 
-            left: '2rem', 
-            width: '120px', 
-            height: '120px', 
-            background: 'rgba(255,255,255,0.1)', 
-            borderRadius: '50%', 
+          {/* Virtual Joystick */}
+          <div style={{
+            position: 'absolute',
+            bottom: '1.5rem',
+            left: '1.5rem',
+            width: '90px',
+            height: '90px',
+            background: 'rgba(255,255,255,0.08)',
+            borderRadius: '50%',
             border: '2px solid rgba(255,255,255,0.2)',
             pointerEvents: 'auto',
-            touchAction: 'none'
+            touchAction: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
           }}
           onTouchStart={(e) => {
-            const touch = e.touches[0];
             const rect = e.currentTarget.getBoundingClientRect();
             const centerX = rect.left + rect.width / 2;
             const centerY = rect.top + rect.height / 2;
             const move = (t) => {
               const dx = t.pageX - centerX;
               const dy = t.pageY - centerY;
-              if (dy < -20) activeKeys.add('w'); else activeKeys.delete('w');
-              if (dy > 20) activeKeys.add('s'); else activeKeys.delete('s');
-              if (dx < -20) activeKeys.add('a'); else activeKeys.delete('a');
-              if (dx > 20) activeKeys.add('d'); else activeKeys.delete('d');
+              if (dy < -15) activeKeys.add('w'); else activeKeys.delete('w');
+              if (dy > 15) activeKeys.add('s'); else activeKeys.delete('s');
+              if (dx < -15) activeKeys.add('a'); else activeKeys.delete('a');
+              if (dx > 15) activeKeys.add('d'); else activeKeys.delete('d');
             };
-            move(touch);
+            move(e.touches[0]);
             const moveHandler = (me) => move(me.touches[0]);
             const endHandler = () => {
               activeKeys.delete('w'); activeKeys.delete('a'); activeKeys.delete('s'); activeKeys.delete('d');
@@ -1631,44 +1652,75 @@ export default function Game() {
             window.addEventListener('touchend', endHandler);
           }}
           >
-            <div style={{ position: 'absolute', top: '50%', left: '50%', width: '40px', height: '40px', background: 'rgba(255,255,255,0.3)', borderRadius: '50%', transform: 'translate(-50%, -50%)' }} />
+            <div style={{ width: '32px', height: '32px', background: 'rgba(255,255,255,0.28)', borderRadius: '50%' }} />
           </div>
 
           {/* Action Buttons */}
-          <div style={{ position: 'absolute', bottom: '2rem', right: '2rem', display: 'flex', flexDirection: 'column', gap: '1rem', pointerEvents: 'auto' }}>
-            <div 
-              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' })) }}
-              style={{ width: '80px', height: '80px', background: 'rgba(255,122,24,0.3)', border: '2px solid #ff7a18', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+          <div style={{ position: 'absolute', bottom: '1.5rem', right: '1.5rem', display: 'flex', flexDirection: 'column', gap: '0.7rem', pointerEvents: 'auto' }}>
+            <div
+              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: ' ' })); }}
+              style={{
+                width: '64px',
+                height: '64px',
+                background: 'rgba(255,122,24,0.3)',
+                border: '2px solid #ff7a18',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: '900',
+                fontSize: '0.6rem',
+                letterSpacing: '0.05rem',
+                fontFamily: "'Outfit', sans-serif",
+                textAlign: 'center',
+                userSelect: 'none'
+              }}>
               LAUNCH
             </div>
-            <div 
-              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e' })) }}
-              style={{ width: '70px', height: '70px', background: 'rgba(57,255,20,0.2)', border: '2px solid #39FF14', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
+            <div
+              onTouchStart={() => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'e' })); }}
+              style={{
+                width: '54px',
+                height: '54px',
+                background: 'rgba(57,255,20,0.2)',
+                border: '2px solid #39FF14',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontWeight: '900',
+                fontSize: '0.75rem',
+                fontFamily: "'Outfit', sans-serif",
+                userSelect: 'none'
+              }}>
               E
             </div>
           </div>
         </div>
       )}
 
-      {showControls && <ControlsOverlay onClose={() => setShowControls(false)} />}
+      {showControls && <ControlsOverlay onClose={() => setShowControls(false)} isMobile={isMobile} />}
 
 
       {/* Critical Health Warning Overlay */}
       {uiHealth < 20 && uiHealth > 0 && (
         <div style={{
           position: 'absolute',
-          top: '10rem',
+          top: isMobile ? '5rem' : '10rem',
           left: '50%',
           transform: 'translateX(-50%)',
           color: '#ff3b3b',
-          fontSize: '1.8rem',
+          fontSize: isMobile ? '1rem' : '1.8rem',
           fontWeight: '900',
-          letterSpacing: '0.2rem',
+          letterSpacing: isMobile ? '0.1rem' : '0.2rem',
           fontFamily: "'Outfit', sans-serif",
           textShadow: '0 0 15px rgba(255, 0, 0, 0.6)',
           animation: 'warning-pulse 0.5s infinite alternate',
           pointerEvents: 'none',
-          zIndex: 200
+          zIndex: 200,
+          whiteSpace: 'nowrap'
         }}>
           ⚠ SEAL BREAKING ⚠
         </div>
@@ -1677,7 +1729,7 @@ export default function Game() {
       {/* Floating Damage Text Container */}
       <div style={{
         position: 'absolute',
-        top: '6rem', // Positioned below/around the title but conceptually "above" health logic
+        top: isMobile ? '3.5rem' : '6rem',
         left: '50%',
         transform: 'translateX(-50%)',
         pointerEvents: 'none',
@@ -1687,7 +1739,7 @@ export default function Game() {
           <div key={pop.id} style={{
             position: 'absolute',
             color: '#ff4d4d',
-            fontSize: '2rem',
+            fontSize: isMobile ? '1.2rem' : '2rem',
             fontWeight: '900',
             textShadow: '0 0 10px rgba(255, 77, 77, 0.6)',
             animation: 'damage-float 1s forwards',
@@ -1751,16 +1803,18 @@ export default function Game() {
         left: "50%",
         transform: "translate(-50%, -50%)",
         color: "#fff",
-        fontSize: "5rem",
+        fontSize: isMobile ? "2rem" : "5rem",
         fontWeight: "900",
         fontFamily: "'Outfit', 'Inter', sans-serif",
         textTransform: "uppercase",
-        letterSpacing: "0.5rem",
+        letterSpacing: isMobile ? "0.2rem" : "0.5rem",
         textShadow: "0 0 20px rgba(255, 255, 255, 0.4), 0 0 40px rgba(255, 255, 255, 0.2)",
         pointerEvents: "none",
         zIndex: 1000,
         opacity: 0,
-        whiteSpace: "nowrap"
+        whiteSpace: "nowrap",
+        maxWidth: "90vw",
+        textAlign: "center"
       }}></div>
     </div>
   );

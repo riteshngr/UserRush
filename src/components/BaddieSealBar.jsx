@@ -1,19 +1,19 @@
 import React from 'react';
 
-const BaddieSealBar = ({ health }) => {
+const BaddieSealBar = ({ health, isMobile }) => {
   const isBreaking = health < 20;
 
   const containerStyle = {
     position: 'absolute',
-    top: '2rem',
+    top: isMobile ? '0.8rem' : '2rem',
     left: '50%',
     transform: 'translateX(-50%)',
-    width: '80%',
-    maxWidth: '800px',
+    width: isMobile ? '90%' : '80%',
+    maxWidth: isMobile ? '360px' : '800px',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: '0.5rem',
+    gap: isMobile ? '0.25rem' : '0.5rem',
     zIndex: 100,
     fontFamily: "'Outfit', 'Inter', sans-serif",
     pointerEvents: 'none',
@@ -21,9 +21,9 @@ const BaddieSealBar = ({ health }) => {
 
   const titleStyle = {
     color: '#fff',
-    fontSize: '1.5rem',
+    fontSize: isMobile ? '0.85rem' : '1.5rem',
     fontWeight: '900',
-    letterSpacing: '0.3rem',
+    letterSpacing: isMobile ? '0.15rem' : '0.3rem',
     textTransform: 'uppercase',
     textShadow: '0 0 10px rgba(255, 255, 255, 0.5), 0 0 20px rgba(255, 59, 59, 0.3)',
     margin: 0,
@@ -31,13 +31,13 @@ const BaddieSealBar = ({ health }) => {
 
   const barContainerStyle = {
     width: '100%',
-    height: '24px',
+    height: isMobile ? '14px' : '24px',
     background: 'rgba(20, 20, 20, 0.8)',
     border: '2px solid rgba(255, 255, 255, 0.1)',
     borderRadius: '4px',
-    padding: '3px',
-    boxShadow: isBreaking 
-      ? '0 0 20px rgba(255, 0, 0, 0.8)' 
+    padding: isMobile ? '2px' : '3px',
+    boxShadow: isBreaking
+      ? '0 0 20px rgba(255, 0, 0, 0.8)'
       : '0 0 15px rgba(255, 80, 80, 0.4)',
     position: 'relative',
     overflow: 'hidden',
@@ -56,10 +56,10 @@ const BaddieSealBar = ({ health }) => {
 
   const percentageStyle = {
     color: isBreaking ? '#ff3b3b' : '#aaa',
-    fontSize: '1rem',
+    fontSize: isMobile ? '0.6rem' : '1rem',
     fontWeight: 'bold',
-    letterSpacing: '0.1rem',
-    marginTop: '4px',
+    letterSpacing: isMobile ? '0.05rem' : '0.1rem',
+    marginTop: isMobile ? '2px' : '4px',
     textShadow: isBreaking ? '0 0 8px rgba(255, 0, 0, 0.5)' : 'none',
   };
 
